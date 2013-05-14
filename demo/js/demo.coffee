@@ -1,6 +1,6 @@
 (($, window) ->
 	$(document).ready ->
-		$("#main").stylish()
+		$("#main").stylish("scripts/stylish.php")
 		$("#main").stylish('off')
 
 		$('#toggle_stylish').on 'click', (e) ->

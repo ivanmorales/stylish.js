@@ -2,7 +2,8 @@
 	selectors =
 		modeClass: 'stylish-mode'
 		wrapperClass: 'stylish-wrapper'
-		selectorClass: 'input-selector'
+		inputSelectorClass: 'input-selector'
+		inputStyleClass: 'input-style'
 
 	templates =
 		hoverWrapper:
@@ -17,14 +18,14 @@
 					<div class="popover-content">
 						<small class="muted size"></small>
 						<p>Selector</p>
-						<input type="text" class="#{selectors.selectorClass} input-medium pull-left" />
+						<input type="text" class="#{selectors.inputSelectorClass} input-medium pull-left" />
 						<div class="btn-toolbar pull-left selector-level">
 							<div class="btn-group">
 								<a class="btn btn-mini select-up" href="#"><i class="icon-circle-arrow-up"></i></a>
 								<a class="btn btn-mini select-down" href="#"><i class="icon-circle-arrow-down"></i></a>
 							</div>
 						</div>
-						<textarea rows="3" class="input-large"></textarea>
+						<textarea rows="3" class="#{selectors.inputStyleClass} input-large"></textarea>
 						<div class="text-center">
 							<button class="btn btn-save">Save</button>
 						</div>
@@ -51,6 +52,10 @@
 				options =
 					post: options
 
+			# Stablish the settings
+			@settings = $.extend({}, @defaults, options)
+			throw Error('You need to define the \'post\' parameter.') unless @settings.post
+
 			# Initialize jQuery elements
 			@$container = $(container)
 
@@ -58,14 +63,11 @@
 			if @$container.is(document) or @$container.is(window)
 				@$container = $('body')
 
-			@$container.append(templates.hoverWrapper)
-			@$container.append(templates.dialog)
+			@$container
+				.append(templates.hoverWrapper)
+				.append(templates.dialog)
 			@$wrapper = $(@$container).children(".#{selectors.wrapperClass}")
 			@$dialog = $(@$container).children('.stylish.popover')
-
-			# 
-			@settings = $.extend({}, @defaults, options)
-			# throw Error('You need to define the \'post\' parameter.') unless @settings.post
 			
 			active = true
 			
@@ -73,6 +75,13 @@
 			@$container.on('mouseover', '*', @displayOver)
 			@$container.on('click', '*', @displayEditor)
 			@$dialog.on('click', '.selector-level .btn', @changeLevel)
+			@$dialog.on('click', '.btn-save', @saveStyles)
+
+			$.ajax
+				url: @settings.post
+				data: { json: 1 }
+				type: 'GET'
+				success: @setStyleData
 
 		# Utilities
 		getSelector: ($element) ->
@@ -90,10 +99,31 @@
 							.map((index, element) => @getSelector($(element)) if index < level)
 							.get()
 							.reverse()
-							.join(' ')
+							.join(' > ')
 			current = @getSelector($element)
 
-			"#{parents} #{current}".replace(".#{selectors.modeClass}", '')
+			selector = if parents then "#{parents} > #{current}" else "#{current}"
+
+			selector.replace(".#{selectors.modeClass}", '')
+		css2Json: (cssText) ->
+			obj = {}
+
+			attributes = cssText.replace('\n', '').split(';')
+			attributes.pop()	# Remove the last element, because it's empty
+			for line in attributes
+				index = line.indexOf(':')
+				attribute = $.trim(line.substring(0, index))
+				value = $.trim(line.substr(index + 1)).replace(';', '')
+
+				obj[attribute] = value
+
+			obj
+		json2Css: (cssJson) ->
+			style = ""
+			for attribute, value of cssJson
+				style += "#{attribute}: #{value};\n"
+
+			style
 
 		# Actions
 		on: ->
@@ -107,7 +137,21 @@
 		destroy: ->
 			@$wrapper.remove()
 			@$container.off('mouseover', '*', @displayOver)
+			@$container.off('click', '*', @displayEditor)
+			@$dialog.off('click', '.selector-level .btn', @changeLevel)
+			@$dialog.off('click', '.btn-save', @saveStyles)
 			@$container.data('stylish', null)
+
+		# AJAX
+		setStyleData: (styles) ->
+			for selector, style of styles
+				data = $(selector).data('style')
+				if not (data instanceof Array)
+					data = []
+				data.push({ selector: selector, style: style })
+				$(selector).data('style', data)
+
+			undefined
 
 		# Events
 		displayOver: (e) =>
@@ -115,8 +159,8 @@
 
 			$this = $(e.target)
 
-			@$wrapper.width($this.width())
-			@$wrapper.height($this.height())
+			@$wrapper.width($this.outerWidth())
+			@$wrapper.height($this.outerHeight())
 			@$wrapper.offset($this.offset())
 
 			@$wrapper.show()
@@ -138,14 +182,24 @@
 
 			@editing = true
 			@$element = $this
+
+			if @$element.data('style')
+				styles = @$element.data('style')
+				selector = styles[0].selector
+				styleText = @json2Css(styles[0].style)
+			else
+				selector = @getCompleteSelector($this, 0)
+				styleText = ""
 			
-			@$dialog.find(".#{selectors.selectorClass}").val(@getCompleteSelector($this, 0))
+			@$dialog.find(".#{selectors.inputSelectorClass}").val(selector)
 			@$dialog.find('.size').html("#{$this.width()}px x #{$this.height()}px")
+			@$dialog.find(".#{selectors.inputStyleClass}").val(styleText)
 			@$dialog
 				.show()
 				.offset	# TODO: Improve calculation of the location for the popover
 					top: $this.offset().top + $this.height() + 7
 					left: $this.offset().left + 15	# Calculate position for top arrow
+
 		changeLevel: (e) =>
 			$this = $(e.currentTarget)
 			level = @$element.data('level') or 0
@@ -155,13 +209,28 @@
 			else
 				level-- if level > 0
 
-			@$dialog.find(".#{selectors.selectorClass}").val(@getCompleteSelector(@$element, level))
+			@$dialog.find(".#{selectors.inputSelectorClass}").val(@getCompleteSelector(@$element, level))
 			@$element.data('level', level)
+		saveStyles: (e) =>
+			cssText = @$dialog.find(".#{selectors.inputStyleClass}").val().replace('\n', ' ')
+			selector = @$dialog.find(".#{selectors.inputSelectorClass}").val()
+			value = @css2Json(cssText)
 
+			$.ajax
+				url: @settings.post
+				data:
+					selector: selector
+					value: value
+				type: 'POST'
+				success: ->
+					$(selector).css(value)
+				error: ->
+					# TODO: Display error
+			
 
 	# Define plugin
 	$.fn.stylish = (options) ->
-		this.each ->
+		@each ->
 			data = $(this).data('stylish') 
 			if data is undefined
 				plugin = new Stylish(this, options)

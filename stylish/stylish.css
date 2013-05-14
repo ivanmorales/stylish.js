@@ -2158,7 +2158,7 @@ a.text-success:focus {
 		position: absolute;
 		left: 10px;
 		bottom: 5px;
-		color: #CCCCCC;
+		font-size: 10px;
 	}
 
 .stylish .selector-level {
