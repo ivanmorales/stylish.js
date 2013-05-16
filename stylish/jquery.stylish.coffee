@@ -1,14 +1,15 @@
 (($, window) ->
-	selectors =
-		modeClass: 'stylish-mode'
-		wrapperClass: 'stylish-wrapper'
-		inputSelectorClass: 'input-selector'
-		inputStyleClass: 'input-style'
+	className =
+		mode: 'stylish-mode'
+		wrapper: 'stylish-wrapper'
+		inputSelector: 'input-selector'
+		inputStyle: 'input-style'
+		inputStoredSelectors: 'stored-styles'
 
 	templates =
 		hoverWrapper:
 			"""
-				<div class="#{selectors.wrapperClass}"></div>
+				<div class="#{className.wrapper}"></div>
 			"""
 		dialog:
 			"""
@@ -17,20 +18,26 @@
 
 					<div class="popover-content">
 						<small class="muted size"></small>
-						<p>Selector</p>
-						<input type="text" class="#{selectors.inputSelectorClass} input-medium pull-left" />
+						<label>Stored:</label>
+						<select class="#{className.inputStoredSelectors} input-large"></select>
+						<label>Selector:</label>
+						<input type="text" class="#{className.inputSelector} input-large pull-left" />
 						<div class="btn-toolbar pull-left selector-level">
 							<div class="btn-group">
 								<a class="btn btn-mini select-up" href="#"><i class="icon-circle-arrow-up"></i></a>
 								<a class="btn btn-mini select-down" href="#"><i class="icon-circle-arrow-down"></i></a>
 							</div>
 						</div>
-						<textarea rows="3" class="#{selectors.inputStyleClass} input-large"></textarea>
+						<textarea rows="5" class="#{className.inputStyle} input-xlarge"></textarea>
 						<div class="text-center">
 							<button class="btn btn-save">Save</button>
 						</div>
 					</div>
 				</div>
+			"""
+		storeSelectorOption:
+			"""
+				<option value="0" class="muted">Not stored</option>
 			"""
 
 	class Stylish
@@ -63,19 +70,18 @@
 			if @$container.is(document) or @$container.is(window)
 				@$container = $('body')
 
+			@$wrapper = $(templates.hoverWrapper)
+			@$dialog = $(templates.dialog)
 			@$container
-				.append(templates.hoverWrapper)
-				.append(templates.dialog)
-			@$wrapper = $(@$container).children(".#{selectors.wrapperClass}")
-			@$dialog = $(@$container).children('.stylish.popover')
+				.append(@$wrapper)
+				.append(@$dialog)
 			
-			active = true
-			
-			@$container.addClass(selectors.modeClass)
+			@$container.addClass(className.mode)
 			@$container.on('mouseover', '*', @displayOver)
 			@$container.on('click', '*', @displayEditor)
 			@$dialog.on('click', '.selector-level .btn', @changeLevel)
 			@$dialog.on('click', '.btn-save', @saveStyles)
+			@$dialog.on('change', ".#{className.inputStoredSelectors}", @selectStyle)
 
 			$.ajax
 				url: @settings.post
@@ -83,7 +89,7 @@
 				type: 'GET'
 				success: @setStyleData
 
-		# Utilities
+		# Dom utilities
 		getSelector: ($element) ->
 			selector = $element[0].nodeName
 			id = $element.attr('id')
@@ -104,7 +110,32 @@
 
 			selector = if parents then "#{parents} > #{current}" else "#{current}"
 
-			selector.replace(".#{selectors.modeClass}", '')
+			selector.replace(".#{className.mode}", '')
+		addStyleToElement: (selector, style) ->
+			$(selector).each (index, element) ->
+				$this = $(element)
+				data = $this.data('styles')
+				if not data
+					data = {}
+				data[selector] = { style: style }
+				$this.data('styles', data)
+			
+		closeDialog: =>
+			@editing = false
+			@$element = null
+			@$dialog.hide()
+		setInputValues: (selector) =>
+			styles = @$element.data('styles')
+			styleText = ""
+
+			if styles and styles[selector]
+				styleText = @json2Css(styles[selector].style)
+			
+			@$dialog.find(".#{className.inputSelector}").val(selector)
+			@$dialog.find(".#{className.inputStyle}").val(styleText)
+			@$dialog.find(".#{className.inputStoredSelectors}").val(selector)
+
+		# Misc utilities
 		css2Json: (cssText) ->
 			obj = {}
 
@@ -140,16 +171,13 @@
 			@$container.off('click', '*', @displayEditor)
 			@$dialog.off('click', '.selector-level .btn', @changeLevel)
 			@$dialog.off('click', '.btn-save', @saveStyles)
+			@$dialog.off('change', ".#{className.inputStoredSelectors}", @selectStyle)
 			@$container.data('stylish', null)
 
 		# AJAX
-		setStyleData: (styles) ->
+		setStyleData: (styles) =>
 			for selector, style of styles
-				data = $(selector).data('style')
-				if not (data instanceof Array)
-					data = []
-				data.push({ selector: selector, style: style })
-				$(selector).data('style', data)
+				@addStyleToElement(selector, style)
 
 			undefined
 
@@ -174,46 +202,48 @@
 			if @editing
 				if $this.is('.stylish.popover') or $this.parents('.stylish.popover').size() > 0
 					return
-				else
-					@editing = false
-					@$element = null
-					@$dialog.hide()
+				else	# Close dialog when clicking outside the dialog
+					@closeDialog()
 					return
 
 			@editing = true
 			@$element = $this
+			options = [ templates.storeSelectorOption ]
+			selector = @getCompleteSelector($this, 0)
 
-			if @$element.data('style')
-				styles = @$element.data('style')
-				selector = styles[0].selector
-				styleText = @json2Css(styles[0].style)
-			else
-				selector = @getCompleteSelector($this, 0)
-				styleText = ""
+			if @$element.data('styles')
+				styles = @$element.data('styles')
+
+				for sel of styles
+					options.push("<option value=\"#{sel}\">#{sel}</option>")
 			
-			@$dialog.find(".#{selectors.inputSelectorClass}").val(selector)
+			storedStyles = options.join('')
+			
 			@$dialog.find('.size').html("#{$this.width()}px x #{$this.height()}px")
-			@$dialog.find(".#{selectors.inputStyleClass}").val(styleText)
+			@$dialog.find(".#{className.inputStoredSelectors}").html(storedStyles)
+			@setInputValues(selector)
 			@$dialog
 				.show()
 				.offset	# TODO: Improve calculation of the location for the popover
-					top: $this.offset().top + $this.height() + 7
-					left: $this.offset().left + 15	# Calculate position for top arrow
-
+					top: $this.offset().top + $this.outerHeight() + 7	# Calculate position for top arrow
+					left: $this.offset().left + 15
 		changeLevel: (e) =>
 			$this = $(e.currentTarget)
 			level = @$element.data('level') or 0
+			selector = ""
 
 			if $this.is('.select-up')
 				level++ if level < @$element.parents().size()
 			else
 				level-- if level > 0
 
-			@$dialog.find(".#{selectors.inputSelectorClass}").val(@getCompleteSelector(@$element, level))
+			selector = @getCompleteSelector(@$element, level)
+
+			@setInputValues(selector)
 			@$element.data('level', level)
 		saveStyles: (e) =>
-			cssText = @$dialog.find(".#{selectors.inputStyleClass}").val().replace('\n', ' ')
-			selector = @$dialog.find(".#{selectors.inputSelectorClass}").val()
+			cssText = @$dialog.find(".#{className.inputStyle}").val().replace('\n', ' ')
+			selector = @$dialog.find(".#{className.inputSelector}").val()
 			value = @css2Json(cssText)
 
 			$.ajax
@@ -222,11 +252,21 @@
 					selector: selector
 					value: value
 				type: 'POST'
-				success: ->
+				success: =>
 					$(selector).css(value)
-				error: ->
+					@addStyleToElement(selector, value)
+					@closeDialog()
+				error: =>
 					# TODO: Display error
-			
+		selectStyle: (e) =>
+			$this = $(e.target)
+			selector = $this.val()
+
+			if selector is '0'
+				selector = @getCompleteSelector(@$element, 0)
+
+			@setInputValues(selector)
+
 
 	# Define plugin
 	$.fn.stylish = (options) ->

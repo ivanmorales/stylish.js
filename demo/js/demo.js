@@ -2,7 +2,6 @@
 (function($, window) {
   return $(document).ready(function() {
     $("#main").stylish("scripts/stylish.php");
-    $("#main").stylish('off');
     return $('#toggle_stylish').on('click', function(e) {
       return $("#main").stylish('toggle');
     });

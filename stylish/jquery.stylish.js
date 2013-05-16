@@ -2,17 +2,19 @@
 var __bind = function(fn, me){ return function(){ return fn.apply(me, arguments); }; };
 
 (function($, window) {
-  var Stylish, selectors, templates;
+  var Stylish, className, templates;
 
-  selectors = {
-    modeClass: 'stylish-mode',
-    wrapperClass: 'stylish-wrapper',
-    inputSelectorClass: 'input-selector',
-    inputStyleClass: 'input-style'
+  className = {
+    mode: 'stylish-mode',
+    wrapper: 'stylish-wrapper',
+    inputSelector: 'input-selector',
+    inputStyle: 'input-style',
+    inputStoredSelectors: 'stored-styles'
   };
   templates = {
-    hoverWrapper: "<div class=\"" + selectors.wrapperClass + "\"></div>",
-    dialog: "<div class=\"stylish popover bottom\">\n	<div class=\"arrow\"></div>\n\n	<div class=\"popover-content\">\n		<small class=\"muted size\"></small>\n		<p>Selector</p>\n		<input type=\"text\" class=\"" + selectors.inputSelectorClass + " input-medium pull-left\" />\n		<div class=\"btn-toolbar pull-left selector-level\">\n			<div class=\"btn-group\">\n				<a class=\"btn btn-mini select-up\" href=\"#\"><i class=\"icon-circle-arrow-up\"></i></a>\n				<a class=\"btn btn-mini select-down\" href=\"#\"><i class=\"icon-circle-arrow-down\"></i></a>\n			</div>\n		</div>\n		<textarea rows=\"3\" class=\"" + selectors.inputStyleClass + " input-large\"></textarea>\n		<div class=\"text-center\">\n			<button class=\"btn btn-save\">Save</button>\n		</div>\n	</div>\n</div>"
+    hoverWrapper: "<div class=\"" + className.wrapper + "\"></div>",
+    dialog: "<div class=\"stylish popover bottom\">\n	<div class=\"arrow\"></div>\n\n	<div class=\"popover-content\">\n		<small class=\"muted size\"></small>\n		<label>Stored:</label>\n		<select class=\"" + className.inputStoredSelectors + " input-large\"></select>\n		<label>Selector:</label>\n		<input type=\"text\" class=\"" + className.inputSelector + " input-large pull-left\" />\n		<div class=\"btn-toolbar pull-left selector-level\">\n			<div class=\"btn-group\">\n				<a class=\"btn btn-mini select-up\" href=\"#\"><i class=\"icon-circle-arrow-up\"></i></a>\n				<a class=\"btn btn-mini select-down\" href=\"#\"><i class=\"icon-circle-arrow-down\"></i></a>\n			</div>\n		</div>\n		<textarea rows=\"5\" class=\"" + className.inputStyle + " input-xlarge\"></textarea>\n		<div class=\"text-center\">\n			<button class=\"btn btn-save\">Save</button>\n		</div>\n	</div>\n</div>",
+    storeSelectorOption: "<option value=\"0\" class=\"muted\">Not stored</option>"
   };
   Stylish = (function() {
     Stylish.prototype.active = false;
@@ -30,16 +32,18 @@ var __bind = function(fn, me){ return function(){ return fn.apply(me, arguments)
     Stylish.prototype.$dialog = void 0;
 
     function Stylish(container, options) {
+      this.selectStyle = __bind(this.selectStyle, this);
       this.saveStyles = __bind(this.saveStyles, this);
       this.changeLevel = __bind(this.changeLevel, this);
       this.displayEditor = __bind(this.displayEditor, this);
       this.displayOver = __bind(this.displayOver, this);
+      this.setStyleData = __bind(this.setStyleData, this);
+      this.setInputValues = __bind(this.setInputValues, this);
+      this.closeDialog = __bind(this.closeDialog, this);
       this.getCompleteSelector = __bind(this.getCompleteSelector, this);      this.init(container, options);
     }
 
     Stylish.prototype.init = function(container, options) {
-      var active;
-
       if (typeof options === 'string') {
         options = {
           post: options
@@ -53,15 +57,15 @@ var __bind = function(fn, me){ return function(){ return fn.apply(me, arguments)
       if (this.$container.is(document) || this.$container.is(window)) {
         this.$container = $('body');
       }
-      this.$container.append(templates.hoverWrapper).append(templates.dialog);
-      this.$wrapper = $(this.$container).children("." + selectors.wrapperClass);
-      this.$dialog = $(this.$container).children('.stylish.popover');
-      active = true;
-      this.$container.addClass(selectors.modeClass);
+      this.$wrapper = $(templates.hoverWrapper);
+      this.$dialog = $(templates.dialog);
+      this.$container.append(this.$wrapper).append(this.$dialog);
+      this.$container.addClass(className.mode);
       this.$container.on('mouseover', '*', this.displayOver);
       this.$container.on('click', '*', this.displayEditor);
       this.$dialog.on('click', '.selector-level .btn', this.changeLevel);
       this.$dialog.on('click', '.btn-save', this.saveStyles);
+      this.$dialog.on('change', "." + className.inputStoredSelectors, this.selectStyle);
       return $.ajax({
         url: this.settings.post,
         data: {
@@ -98,7 +102,42 @@ var __bind = function(fn, me){ return function(){ return fn.apply(me, arguments)
       }).get().reverse().join(' > ');
       current = this.getSelector($element);
       selector = parents ? "" + parents + " > " + current : "" + current;
-      return selector.replace("." + selectors.modeClass, '');
+      return selector.replace("." + className.mode, '');
+    };
+
+    Stylish.prototype.addStyleToElement = function(selector, style) {
+      return $(selector).each(function(index, element) {
+        var $this, data;
+
+        $this = $(element);
+        data = $this.data('styles');
+        if (!data) {
+          data = {};
+        }
+        data[selector] = {
+          style: style
+        };
+        return $this.data('styles', data);
+      });
+    };
+
+    Stylish.prototype.closeDialog = function() {
+      this.editing = false;
+      this.$element = null;
+      return this.$dialog.hide();
+    };
+
+    Stylish.prototype.setInputValues = function(selector) {
+      var styleText, styles;
+
+      styles = this.$element.data('styles');
+      styleText = "";
+      if (styles && styles[selector]) {
+        styleText = this.json2Css(styles[selector].style);
+      }
+      this.$dialog.find("." + className.inputSelector).val(selector);
+      this.$dialog.find("." + className.inputStyle).val(styleText);
+      return this.$dialog.find("." + className.inputStoredSelectors).val(selector);
     };
 
     Stylish.prototype.css2Json = function(cssText) {
@@ -152,23 +191,16 @@ var __bind = function(fn, me){ return function(){ return fn.apply(me, arguments)
       this.$container.off('click', '*', this.displayEditor);
       this.$dialog.off('click', '.selector-level .btn', this.changeLevel);
       this.$dialog.off('click', '.btn-save', this.saveStyles);
+      this.$dialog.off('change', "." + className.inputStoredSelectors, this.selectStyle);
       return this.$container.data('stylish', null);
     };
 
     Stylish.prototype.setStyleData = function(styles) {
-      var data, selector, style;
+      var selector, style;
 
       for (selector in styles) {
         style = styles[selector];
-        data = $(selector).data('style');
-        if (!(data instanceof Array)) {
-          data = [];
-        }
-        data.push({
-          selector: selector,
-          style: style
-        });
-        $(selector).data('style', data);
+        this.addStyleToElement(selector, style);
       }
       return void 0;
     };
@@ -187,7 +219,7 @@ var __bind = function(fn, me){ return function(){ return fn.apply(me, arguments)
     };
 
     Stylish.prototype.displayEditor = function(e) {
-      var $this, selector, styleText, styles;
+      var $this, options, sel, selector, storedStyles, styles;
 
       e.preventDefault();
       e.stopPropagation();
@@ -199,36 +231,36 @@ var __bind = function(fn, me){ return function(){ return fn.apply(me, arguments)
         if ($this.is('.stylish.popover') || $this.parents('.stylish.popover').size() > 0) {
           return;
         } else {
-          this.editing = false;
-          this.$element = null;
-          this.$dialog.hide();
+          this.closeDialog();
           return;
         }
       }
       this.editing = true;
       this.$element = $this;
-      if (this.$element.data('style')) {
-        styles = this.$element.data('style');
-        selector = styles[0].selector;
-        styleText = this.json2Css(styles[0].style);
-      } else {
-        selector = this.getCompleteSelector($this, 0);
-        styleText = "";
+      options = [templates.storeSelectorOption];
+      selector = this.getCompleteSelector($this, 0);
+      if (this.$element.data('styles')) {
+        styles = this.$element.data('styles');
+        for (sel in styles) {
+          options.push("<option value=\"" + sel + "\">" + sel + "</option>");
+        }
       }
-      this.$dialog.find("." + selectors.inputSelectorClass).val(selector);
+      storedStyles = options.join('');
       this.$dialog.find('.size').html("" + ($this.width()) + "px x " + ($this.height()) + "px");
-      this.$dialog.find("." + selectors.inputStyleClass).val(styleText);
+      this.$dialog.find("." + className.inputStoredSelectors).html(storedStyles);
+      this.setInputValues(selector);
       return this.$dialog.show().offset({
-        top: $this.offset().top + $this.height() + 7,
+        top: $this.offset().top + $this.outerHeight() + 7,
         left: $this.offset().left + 15
       });
     };
 
     Stylish.prototype.changeLevel = function(e) {
-      var $this, level;
+      var $this, level, selector;
 
       $this = $(e.currentTarget);
       level = this.$element.data('level') || 0;
+      selector = "";
       if ($this.is('.select-up')) {
         if (level < this.$element.parents().size()) {
           level++;
@@ -238,15 +270,17 @@ var __bind = function(fn, me){ return function(){ return fn.apply(me, arguments)
           level--;
         }
       }
-      this.$dialog.find("." + selectors.inputSelectorClass).val(this.getCompleteSelector(this.$element, level));
+      selector = this.getCompleteSelector(this.$element, level);
+      this.setInputValues(selector);
       return this.$element.data('level', level);
     };
 
     Stylish.prototype.saveStyles = function(e) {
-      var cssText, selector, value;
+      var cssText, selector, value,
+        _this = this;
 
-      cssText = this.$dialog.find("." + selectors.inputStyleClass).val().replace('\n', ' ');
-      selector = this.$dialog.find("." + selectors.inputSelectorClass).val();
+      cssText = this.$dialog.find("." + className.inputStyle).val().replace('\n', ' ');
+      selector = this.$dialog.find("." + className.inputSelector).val();
       value = this.css2Json(cssText);
       return $.ajax({
         url: this.settings.post,
@@ -256,10 +290,23 @@ var __bind = function(fn, me){ return function(){ return fn.apply(me, arguments)
         },
         type: 'POST',
         success: function() {
-          return $(selector).css(value);
+          $(selector).css(value);
+          _this.addStyleToElement(selector, value);
+          return _this.closeDialog();
         },
         error: function() {}
       });
+    };
+
+    Stylish.prototype.selectStyle = function(e) {
+      var $this, selector;
+
+      $this = $(e.target);
+      selector = $this.val();
+      if (selector === '0') {
+        selector = this.getCompleteSelector(this.$element, 0);
+      }
+      return this.setInputValues(selector);
     };
 
     return Stylish;

@@ -2145,13 +2145,16 @@ a.text-success:focus {
 		border: 1px solid orange;
 		box-shadow: 0 0 5px orange;
 		border-radius: 5px;
-		z-index: -1;
+		z-index: 1000;
+    pointer-events: none;
 	}
 
 .stylish.popover {
 	font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
 	font-size: 14px;
 	line-height: 20px;
+  width: 317px;
+  max-width: 317px;
 }
 
 	.stylish.popover .size {
